@@ -1,0 +1,67 @@
+library(writexl)
+library(tidyverse)
+options(repos = c(
+  ropensci = 'https://ropensci.r-universe.dev',
+  CRAN = 'https://cloud.r-project.org'))
+install.packages('fingertipsR')
+library(fingertipsR)
+
+select_indicators()
+browseVignettes("fingertipsR")
+
+number_of_patients <- fingertips_data(IndicatorID = 119, AreaTypeID = 7)
+number_of_patients <- as_tibble(number_of_patients)
+
+number_of_patients_GP <- number_of_patients %>% 
+  filter(AreaType == "GP", Timeperiod == "2019/20") %>% 
+  select(AreaCode, AreaName, Count, AreaType)
+number_of_patients_GP
+
+Uni_count_per_1000 <- fingertips_data(IndicatorID = 92163, AreaCode = "J82080", AreaTypeID = 7)
+Uni_count_per_1000_tibble <- as_tibble(Uni_count_per_1000)
+Uni_count_per_1000_2020 <- filter(Uni_count_per_1000, Timeperiod %in% "2020")
+
+count_per_1000 <- fingertips_data(IndicatorID = 92163, AreaTypeID = 7)
+count_per_1000_tibble <- as_tibble(count_per_1000)
+count_per_1000_2020Q1 <- filter(count_per_1000, Timeperiod == "2020 Q1")
+count_per_1000_2020Q2 <- filter(count_per_1000, Timeperiod == "2020 Q2")
+count_per_1000_2020Q3 <- filter(count_per_1000, Timeperiod == "2020 Q3")
+count_per_1000_2020Q4 <- filter(count_per_1000, Timeperiod == "2020 Q4")
+
+count_per_1000_2020Q4%>%
+  select(where(is.numeric)) %>% 
+  colMeans(na.rm = TRUE)
+
+count_per_1000_tibble %>%
+  select(where(is.numeric)) %>% 
+  colMeans(na.rm = TRUE)
+count_per_1000_2022Q1 %>%
+  select(where(is.numeric)) %>% 
+  colMeans(na.rm = TRUE)
+
+count_per_star <- fingertips_data(IndicatorID = 91900, AreaTypeID = 7)
+Uni_count_per_star <- fingertips_data(IndicatorID = 91900, AreaCode = "J82080", AreaTypeID = 7)
+
+count_per_star_2020Q1 <- filter(count_per_star, Timeperiod == "2020 Q1")
+count_per_star_2020Q2 <- filter(count_per_star, Timeperiod == "2020 Q2")
+count_per_star_2020Q3 <- filter(count_per_star, Timeperiod == "2020 Q3")
+count_per_star_2020Q4 <- filter(count_per_star, Timeperiod == "2020 Q4")
+count_per_star_2020 <- count_per_star %>%
+  filter(Timeperiod %in% c("2020 Q1", "2020 Q2", "2020 Q3", "2020 Q4")) %>%
+  select(AreaName, AreaCode, Timeperiod, Value) %>%
+  group_by(AreaName)
+view(count_per_star_2020)
+summarise(count_per_star_2020)
+
+write_xlsx(count_per_star_2020,"C:\\Users\\44753\\OneDrive\\Documents\\Masters Diss\\star-pu_2020_new.xlsx")
+
+
+count_per_star_2020Q1 %>%
+  select(where(is.numeric)) %>% 
+  colMeans(na.rm = FALSE)
+
+Uni_Population <- fingertips_data(IndicatorID = 337, AreaCode = "J82080", AreaTypeID = 7)
+Population <- fingertips_data(IndicatorID = 337, AreaTypeID = 7) 
+
+view(Uni_Population)
+
