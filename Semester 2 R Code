@@ -1,0 +1,300 @@
+library(tidyverse)
+library(fingertipsR)
+library(mgcv)
+library(MASS)
+library(lme4)
+# Clear the workspace #
+rm(list=ls())
+
+# Browse Indicator IDs #
+select_indicators()
+
+## STAR-PU and COUNT DATA ##
+
+# Downloads antibiotic prescriptions numbers per star-pu for GP surgeries #
+count_per_star <- fingertips_data(IndicatorID = 91900, AreaTypeID = 7)
+count_per_star <- as_tibble(count_per_star)
+
+# Filters on 2021 and GP specific, and cleans up the dataset #
+count_per_star_GP <- count_per_star %>%
+  filter(AreaType == "GPs") %>%
+  filter(Timeperiod %in% c("2021 Q1", "2021 Q2", "2021 Q3", "2021 Q4")) %>%
+  select(AreaCode, AreaName, ParentName, Count, Denominator, Timeperiod)
+count_exp_2021 <- count_per_star_GP %>%
+  group_by(AreaCode, AreaName, ParentName) %>%
+  summarise(Count = sum(Count), STARPU = mean(Denominator))
+view(count_per_star_2021)
+
+# Plot of antibiotics prescribed against star-pu count #
+plot(Count ~ STARPU, data = count_exp_2021)
+
+
+# POPULATION DATA - doesn't ever download after first line of code#
+
+# Download population data - doesn't work #
+population <- fingertips_data(IndicatorID = 337, AreaTypeID = 7)
+population <- as_tibble(population)
+# Filter to gp surgeries 
+population_2021 <- population %>%
+  filter(AreaType == "GPs", Timeperiod == "2021") %>%
+  select(AreaCode, AreaName, Sex, Age, Timeperiod, Count) %>%
+  pivot_wider(names_from = c(Age, Sex), values_from = Count)
+# Add to count data #
+count_exp_2021 <- count_exp_2021 %>%
+  left_join(population_2021, by = c("AreaCode", "AreaName"))
+
+# Create a new homemade Star-pu variable #
+count_exp_2021$Stars <- (count_exp_2021$`0-4 yrs_Male`*0.8 +(count_exp_2021$`5-9 yrs_Male`+ count_exp_2021$`10-14 yrs_Male`)*0.3 
+                       + (count_exp_2021$`15-19 yrs_Male`+count_exp_2021$`20-24 yrs_Male`)*0.3 +
+                       + (count_exp_2021$`25-29 yrs_Male`+count_exp_2021$`30-34 yrs_Male`)*0.2
+                       + (count_exp_2021$`35-39 yrs_Male`+count_exp_2021$`40-44 yrs_Male`)*0.3
+                       + (count_exp_2021$`45-49 yrs_Male`+count_exp_2021$`50-54 yrs_Male`)*0.3
+                       + (count_exp_2021$`55-59 yrs_Male`+count_exp_2021$`60-64 yrs_Male`)*0.4
+                       + (count_exp_2021$`65-69 yrs_Male`+count_exp_2021$`70-74 yrs_Male`)*0.7
+                       + (count_exp_2021$`75-79 yrs_Male`+count_exp_2021$`80-84 yrs_Male`+count_exp_2021$`90-94 yrs_Male`+count_exp_2021$`95+ yrs_Male`)
+                       + count_exp_2021$`0-4 yrs_Female`*0.8 +(count_exp_2021$`5-9 yrs_Female`+ count_exp_2021$`10-14 yrs_Female`)*0.4 
+                       + (count_exp_2021$`15-19 yrs_Female`+count_exp_2021$`20-24 yrs_Female`)*0.6 +
+                         + (count_exp_2021$`25-29 yrs_Female`+count_exp_2021$`30-34 yrs_Female`)*0.6
+                       + (count_exp_2021$`35-39 yrs_Female`+count_exp_2021$`40-44 yrs_Female`)*0.6
+                       + (count_exp_2021$`45-49 yrs_Female`+count_exp_2021$`50-54 yrs_Female`)*0.6
+                       + (count_exp_2021$`55-59 yrs_Female`+count_exp_2021$`60-64 yrs_Female`)*0.7
+                       + (count_exp_2021$`65-69 yrs_Female`+count_exp_2021$`70-74 yrs_Female`)*1
+                       + (count_exp_2021$`75-79 yrs_Female`+count_exp_2021$`80-84 yrs_Female`+count_exp_2021$`90-94 yrs_Female`+count_exp_2021$`95+ yrs_Female`)*1.3)
+
+# Drop age and sex related columns #
+count_exp_2021 <- count_exp_2021 %>%
+  select(AreaCode, AreaName, Count, STARPU, Stars)
+
+
+
+## ASTHMA DATA ##
+
+# Download asthma prevalence data #
+asthma <- fingertips_data(IndicatorID = 90933, AreaTypeID = 7)
+asthma <- as_tibble(asthma)
+
+# Filter on gp surgeries in 2020/21 #
+asthma_2021 <- asthma %>%
+  filter(AreaType == "GPs", Timeperiod == "2021/22") %>%
+  select(AreaCode, AreaName, Value, IndicatorName, Timeperiod) %>%
+  pivot_wider(names_from = c(IndicatorName, Timeperiod), values_from = Value)
+
+# Rename asthma variable #
+colnames(asthma_2021)[names(asthma_2021) == 'Asthma: QOF prevalence (6+ yrs)_2021/22'] <- 'Asthma'
+
+# Add asthma data to count dataset #
+count_exp_2021 <- count_exp_2021 %>%
+  left_join(asthma_2021, by = c("AreaCode", "AreaName"))
+
+
+## CANCER DATA ##
+
+# Download cancer prevalence data #
+cancer <- fingertips_data(IndicatorID = 276, AreaTypeID = 7)
+cancer <- as_tibble(cancer)
+
+# Filter on gp surgeries in 2020/21 #
+cancer_2021 <- cancer %>%
+  filter(AreaType == "GPs", Timeperiod == "2021/22") %>%
+  select(AreaCode, AreaName, Value, IndicatorName, Timeperiod) %>%
+  pivot_wider(names_from = c(IndicatorName, Timeperiod), values_from = Value)
+
+# Rename cancer variable #
+colnames(cancer_2021)[names(cancer_2021) == 'Cancer: QOF prevalence (all ages)_2021/22'] <- 'Cancer'
+
+# Add asthma data to count dataset #
+count_exp_2021 <- count_exp_2021 %>%
+  left_join(cancer_2021, by = c("AreaCode", "AreaName"))
+
+## SMOKING DATA ##
+
+# Download smoking prevalence data #
+smoking <- fingertips_data(IndicatorID = 91280, AreaTypeID = 7)
+smoking <- as_tibble(smoking)
+
+# Filter on gp surgeries in 2020/21 #
+smoking_2021 <- smoking %>%
+  filter(AreaType == "GPs", Timeperiod == "2021/22") %>%
+  select(AreaCode, AreaName, Value, IndicatorName, Timeperiod) %>%
+  pivot_wider(names_from = c(IndicatorName, Timeperiod), values_from = Value)
+
+# Rename smoking explanatory variable #
+colnames(smoking_2021)[names(smoking_2021) == 'Smoking: QOF prevalence (15+ yrs)_2021/22'] <- 'Smoking'
+
+# Add smoking data to the count dataset
+count_exp_2021 <- count_exp_2021 %>%
+  left_join(smoking_2021, by = c("AreaCode", "AreaName"))
+
+
+## DIABETES DATA ##
+
+# Download diabetes prevalence data #
+diabetes <- fingertips_data(IndicatorID = 241, AreaTypeID = 7)
+diabetes <- as_tibble(diabetes)
+
+# Filter on gp surgeries in 2021 #
+diabetes_2021 <- diabetes %>%
+  filter(AreaType == "GPs", Timeperiod == "2021/22") %>%
+  select(AreaCode, AreaName, Value, IndicatorName, Timeperiod) %>%
+  pivot_wider(names_from = c(IndicatorName, Timeperiod), values_from = Value)
+
+# Change name of diabetes variable #
+colnames(diabetes_2021)[names(diabetes_2021) == 'Diabetes: QOF prevalence (17+ yrs)_2021/22'] <- 'Diabetes'
+
+# Add Diabetes data to Count dataset #
+count_exp_2021 <- count_exp_2021 %>%
+  left_join(diabetes_2021, by = c("AreaCode", "AreaName"))
+
+
+## UNIVERSITY PRACTICE??? ##
+
+# Create a true/false column for whether practice name contains 'univ' ##
+count_exp_2021 <- count_exp_2021 %>%
+  mutate(University = grepl('univ', AreaName, ignore.case = TRUE))
+
+# Change this to a 1 or 0 #
+count_exp_2021$University <- ifelse(count_exp_2021$University=="TRUE",1,0)
+
+
+## DEPRIVATION DATA ##
+
+# Download data #
+Deprivation <- fingertips_data(IndicatorID = 93553, AreaTypeID = 7)
+Deprivation <- as_tibble(Deprivation)
+
+# Filter on gp surgeries #
+Deprivation <- Deprivation %>%
+  filter(AreaType == "GPs") %>%
+  select(AreaCode, AreaName, Value, IndicatorName, Timeperiod) %>%
+  pivot_wider(names_from = c(IndicatorName, Timeperiod), values_from = Value)
+
+# Change name of Deprivation variable #
+colnames(Deprivation)[names(Deprivation) == 'Deprivation score (IMD 2019)_2019'] <- 'Deprivation'
+
+# Add Deprivation data to Count dataset #
+count_exp_2021 <- count_exp_2021 %>%
+  left_join(Deprivation, by = c("AreaCode", "AreaName"))
+
+
+## COPD PREVALENCE DATA ##
+
+# Download data #
+COPD <- fingertips_data(IndicatorID = 253, AreaTypeID = 7)
+COPD <- as_tibble(COPD)
+
+# Filter on gp surgeries in 2021 #
+COPD_2021 <- COPD %>%
+  filter(AreaType == "GPs", Timeperiod == "2021/22") %>%
+  select(AreaCode, AreaName, Value, IndicatorName, Timeperiod) %>%
+  pivot_wider(names_from = c(IndicatorName, Timeperiod), values_from = Value)
+
+# Change name of COPD variable #
+colnames(COPD_2021)[names(COPD_2021) == 'COPD: QOF prevalence (all ages)_2021/22'] <- 'COPD'
+
+# Add COPD data to Count dataset #
+count_exp_2021 <- count_exp_2021 %>%
+  left_join(COPD_2021, by = c("AreaCode", "AreaName"))
+
+
+## MODEL FITTING ##
+
+# Save copy of count_exp_2021 #
+save(count_exp_2021, file = '2021_Data.Rout')
+
+# Open saved version of count_exp_2021 #
+load('2021_Data.Rout')
+
+# Remove observations which have an NA for any explanatory variable #
+count_exp_2021 <- count_exp_2021[complete.cases(count_exp_2021),]
+
+# Fit basic model with log(starpu) as an offset #
+model1 <- glm(Count ~ offset(log(STARPU)),
+              family = 'poisson', data = count_exp_2021)
+summary(model1)
+# Fit model with all explanatory variables #
+model2 <- glm(Count ~ Diabetes + Smoking + Cancer + Asthma + COPD + University + Deprivation
+              + offset(log(STARPU)), family = 'poisson', data = count_exp_2021)
+summary(model2)
+
+# Test whether Model2 is significant compared to Model1 by analysis of deviance
+anova(model1, model2)
+
+# Test whether any explanatories from Model2 should be dropped
+drop1(model2, test = 'F')
+
+# Fit model without deprivation as suggested by drop1()
+model_no_dep <- glm(Count ~ Diabetes + Smoking + Cancer + Asthma + COPD + University
+                    + offset(log(STARPU)), family = 'poisson', data = count_exp_2021)
+summary(model_no_dep)
+
+
+# Plot residuals of model 1 #
+plot(model1, which = 1, labels.id = count_exp_2021$AreaCode)
+df.residual(model1)
+summary(model1)
+
+
+# Plot residuals of model 2 #
+plot(model2, which = 1, labels.id = count_exp_2021$AreaCode)
+
+# Compare residuals of the two models #
+plot(resid(model2), resid(model1))
+abline(a=0,b=1,col='red')
+abline(h=0,v=0,col='black', lwd = 2, lty = 2:2)
+
+# Compare residuals of different models #
+plot(resid(model1), resid(model_smoking))
+
+
+## Negative Binomial Models ##
+
+# Negative Binomial model from poisson variables #
+NB_Model <- glm.nb(Count ~ offset(log(STARPU)), data = count_exp_2021)
+
+NB_Model1 <- glm.nb(Count ~ Diabetes + Smoking + Cancer + Asthma + COPD + University
+                    + offset(log(STARPU)), data = count_exp_2021)
+summary(NB_Model1)
+drop1(NB_Model1)
+
+plot(NB_Model1, which = 1, labels.id = count_exp_2021$AreaCode)
+
+plot(resid(NB_Model), resid(NB_Model1))
+abline(a=0,b=1,col='red')
+abline(h=0,v=0,col='black', lwd = 2, lty = 2:2)
+
+res_1 <- residuals(NB_Model)
+res_2 <- residuals(NB_Model1)
+count_exp_2021$res_1 <- res_1
+count_exp_2021$res_2 <- res_2
+count_exp_2021$Res_Diff <- res_1 - res_2
+
+
+# Fit Negative Binomial GAM #
+gam_model <- gam(Count ~ s(Diabetes) +s(Cancer) + s(Smoking) + s(Asthma) + s(COPD) + University +
+                    offset(log(STARPU)), family = 'nb', data = count_exp_2021)
+summary(gam_model)
+plot(gam_model)
+deviance(gam_model)
+drop1(gam_model)
+help(summary.gam)
+
+gam_model_nouni <- gam(Count ~ s(Diabetes) + s(Smoking) + s(Asthma) + s(COPD) +
+                         offset(log(STARPU)), family = 'nb', data = count_exp_2021)
+
+anova(gam_model_nouni, gam_model)
+
+res_gam <- residuals(gam_model)
+count_exp_2021$res_gam <- res_gam
+count_exp_2021$Res_Diff_gam <- res_1 - res_gam
+
+# Compare Null model vs NB GAM #
+plot(resid(NB_Model), resid(gam_model))
+abline(a=0,b=1,col='red')
+abline(h=0,v=0,col='black', lwd = 2, lty = 2:2)
+
+# Plots of each of the predictors against prescription rate #
+plot(count_exp_2021$Diabetes, count_exp_2021$Count/count_exp_2021$STARPU, xlab = 'Diabetes', ylab = 'Antibiotic prescription rate')
+plot(count_exp_2021$COPD, count_exp_2021$Count/count_exp_2021$STARPU, xlab = 'COPD', ylab = 'Antibiotic prescription rate')
+plot(count_exp_2021$Asthma, count_exp_2021$Count/count_exp_2021$STARPU, xlab = 'Asthma', ylab = 'Antibiotic prescription rate')
+plot(count_exp_2021$Cancer, count_exp_2021$Count/count_exp_2021$STARPU, xlab = 'Cancer', ylab = 'Antibiotic prescription rate')
+plot(count_exp_2021$Smoking, count_exp_2021$Count/count_exp_2021$STARPU, xlab = 'Smoking', ylab = 'Antibiotic prescription rate')
